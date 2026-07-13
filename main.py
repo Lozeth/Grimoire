@@ -290,25 +290,6 @@ class Grimoire(QWidget):
 
         main_layout.addWidget(self.now_playing)
 
-        self.web_player = QWebEngineView()
-
-        self.web_player.settings().setAttribute(
-            QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture,
-            False,
-        )
-
-        self.web_player.titleChanged.connect(
-            self.handle_player_title_change
-        )
-
-        self.web_player.setMinimumSize(480, 270)
-
-        main_layout.addWidget(self.web_player)
-
-        self.web_player.load(
-            QUrl(f"{PLAYER_ORIGIN}/")
-        )
-
         self.load_albums()
 
     def load_albums(self):
