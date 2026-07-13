@@ -1,3 +1,4 @@
+from PySide6.QtGui import QIcon
 import random
 import re
 import sys
@@ -44,6 +45,7 @@ class Grimoire(QWidget):
         super().__init__()
 
         self.setWindowTitle("Grimoire")
+        self.setWindowIcon(QIcon("icon.ico"))
         self.setMinimumSize(700, 450)
 
         self.play_queue = []
