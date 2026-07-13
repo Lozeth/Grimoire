@@ -88,13 +88,17 @@ class Grimoire(QWidget):
         play_button = QPushButton("Play")
         play_button.clicked.connect(self.play_selected_album)
 
+        pause_button = QPushButton("Pause/Resume")
+        pause_button.clicked.connect(self.pause_playback)
+
         next_button = QPushButton("Next")
         next_button.clicked.connect(self.next_album)
 
-        shuffle_button = QPushButton("Shuffle Albums")
+        shuffle_button = QPushButton("Shuffle")
         shuffle_button.clicked.connect(self.shuffle_from_selected)
 
         playback_buttons.addWidget(play_button)
+        playback_buttons.addWidget(pause_button)
         playback_buttons.addWidget(next_button)
         playback_buttons.addWidget(shuffle_button)
 
@@ -280,6 +284,9 @@ class Grimoire(QWidget):
         )
 
         self.audio_player.play_youtube(url)
+
+    def pause_playback(self):
+        self.audio_player.pause()
 
     def next_album(self):
         if not self.play_queue:
