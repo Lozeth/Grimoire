@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 import database
 import youtube
+from player import Player
 
 
 PLAYER_HOST = "127.0.0.1"
@@ -236,6 +237,16 @@ class Grimoire(QWidget):
         self.play_queue = []
         self.queue_position = -1
         self.advancing_album = False
+
+        self.audio_player = Player()
+
+        self.audio_player.playback_ended.connect(
+            self.handle_audio_finished
+        )
+
+        self.audio_player.playback_error.connect(
+            self.handle_audio_error
+        )
 
         database.create_database()
 
@@ -461,30 +472,29 @@ class Grimoire(QWidget):
             album["url"],
         )
 
-    def play_album(self, title, url):
-        video_id = extract_youtube_video_id(url)
-
-        if not video_id:
-            QMessageBox.warning(
-                self,
-                "Invalid URL",
-                f"Grimoire could not play:\n\n{title}",
-            )
-            return
-
-        self.now_playing.setText(
-            f"Now playing: {title}"
+    def handle_audio_finished(self):
+        QTimer.singleShot(
+            100,
+            self.play_next_album,
         )
 
-        player_url = QUrl(f"{PLAYER_ORIGIN}/player")
+    def handle_audio_error(self, message):
+        self.now_playing.setText(
+            "Playback failed"
+        )
 
-        parameters = QUrlQuery()
-        parameters.addQueryItem("video", video_id)
-        parameters.addQueryItem("title", title)
+        QMessageBox.warning(
+            self,
+            "Playback Error",
+            message,
+        )    
+      
+    def play_album(self, title, url):
+        self.now_playing.setText(
+            f"Loading: {title}"
+        )
 
-        player_url.setQuery(parameters)
-
-        self.web_player.load(player_url)
+        self.audio_player.play_youtube(url)
 
     def handle_player_title_change(self, page_title):
         if page_title != ENDED_PAGE_TITLE:
