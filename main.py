@@ -1,3 +1,5 @@
+import json
+import random
 import re
 import sys
 import threading
@@ -5,8 +7,9 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from PySide6.QtCore import Qt, QTimer, QUrl, QUrlQuery
 from PySide6.QtWebEngineCore import QWebEngineSettings
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -19,7 +22,6 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMessageBox,
 )
-from PySide6.QtWebEngineWidgets import QWebEngineView
 
 import database
 import youtube
@@ -28,6 +30,8 @@ import youtube
 PLAYER_HOST = "127.0.0.1"
 PLAYER_PORT = 8765
 PLAYER_ORIGIN = f"http://{PLAYER_HOST}:{PLAYER_PORT}"
+
+ENDED_PAGE_TITLE = "GRIMOIRE_ALBUM_ENDED"
 
 
 def extract_youtube_video_id(url):
@@ -41,6 +45,7 @@ def extract_youtube_video_id(url):
 
     for pattern in patterns:
         match = re.search(pattern, url)
+
         if match:
             return match.group(1)
 
@@ -48,7 +53,7 @@ def extract_youtube_video_id(url):
 
 
 class PlayerPageHandler(BaseHTTPRequestHandler):
-    """Serve Grimoire's small local YouTube player page."""
+    """Serve Grimoire's local YouTube player page."""
 
     def do_GET(self):
         request = urlparse(self.path)
@@ -59,6 +64,7 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
 
         if request.path == "/player":
             parameters = parse_qs(request.query)
+
             video_id = parameters.get("video", [""])[0]
             title = parameters.get("title", ["YouTube album"])[0]
 
@@ -79,9 +85,10 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header(
             "Referrer-Policy",
-            "strict-origin-when-cross-origin"
+            "strict-origin-when-cross-origin",
         )
         self.end_headers()
+
         self.wfile.write(encoded)
 
     @staticmethod
@@ -91,6 +98,7 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
         <html>
         <head>
             <meta charset="utf-8">
+
             <style>
                 html, body {
                     height: 100%;
@@ -107,6 +115,7 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
                 }
             </style>
         </head>
+
         <body>
             Select an album and press Play.
         </body>
@@ -116,12 +125,14 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
     @staticmethod
     def player_page(video_id, title):
         safe_title = escape(title)
+        javascript_title = json.dumps(title)
 
         return f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
+
             <meta
                 name="referrer"
                 content="strict-origin-when-cross-origin"
@@ -136,10 +147,9 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
                     background: #000;
                 }}
 
-                iframe {{
+                #player {{
                     width: 100%;
                     height: 100%;
-                    border: 0;
                 }}
             </style>
 
@@ -147,19 +157,49 @@ class PlayerPageHandler(BaseHTTPRequestHandler):
         </head>
 
         <body>
-            <iframe
-                src="https://www.youtube.com/embed/{video_id}?autoplay=1&playsinline=1&origin={PLAYER_ORIGIN}"
-                title="{safe_title}"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowfullscreen>
-            </iframe>
+            <div id="player"></div>
+
+            <script src="https://www.youtube.com/iframe_api"></script>
+
+            <script>
+                let player;
+
+                function onYouTubeIframeAPIReady() {{
+                    player = new YT.Player("player", {{
+                        width: "100%",
+                        height: "100%",
+                        videoId: "{video_id}",
+
+                        playerVars: {{
+                            autoplay: 1,
+                            playsinline: 1,
+                            origin: "{PLAYER_ORIGIN}"
+                        }},
+
+                        events: {{
+                            onReady: onPlayerReady,
+                            onStateChange: onPlayerStateChange
+                        }}
+                    }});
+                }}
+
+                function onPlayerReady(event) {{
+                    document.title = {javascript_title};
+                    event.target.playVideo();
+                }}
+
+                function onPlayerStateChange(event) {{
+                    if (event.data === YT.PlayerState.ENDED) {{
+                        document.title = "{ENDED_PAGE_TITLE}";
+                    }}
+                }}
+            </script>
         </body>
         </html>
         """
 
     def log_message(self, format, *args):
-        # Prevent the local server from filling the terminal with requests.
+        # Keep routine local-server requests out of the terminal.
         pass
 
 
@@ -167,18 +207,20 @@ def start_player_server():
     try:
         server = ThreadingHTTPServer(
             (PLAYER_HOST, PLAYER_PORT),
-            PlayerPageHandler
+            PlayerPageHandler,
         )
+
     except OSError as error:
         raise RuntimeError(
-            f"Grimoire could not start its local player on "
+            f"Grimoire could not start its local player at "
             f"{PLAYER_ORIGIN}.\n\n{error}"
         ) from error
 
     thread = threading.Thread(
         target=server.serve_forever,
-        daemon=True
+        daemon=True,
     )
+
     thread.start()
 
     return server
@@ -191,13 +233,13 @@ class Grimoire(QWidget):
         self.setWindowTitle("Grimoire")
         self.setMinimumSize(700, 720)
 
+        self.play_queue = []
+        self.queue_position = -1
+        self.advancing_album = False
+
         database.create_database()
 
         main_layout = QVBoxLayout(self)
-
-        title = QLabel("Grimoire")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(title)
 
         self.album_list = QListWidget()
         self.album_list.itemDoubleClicked.connect(
@@ -215,6 +257,7 @@ class Grimoire(QWidget):
 
         library_buttons.addWidget(add_button)
         library_buttons.addWidget(delete_button)
+
         main_layout.addLayout(library_buttons)
 
         playback_buttons = QHBoxLayout()
@@ -223,24 +266,32 @@ class Grimoire(QWidget):
         play_button.clicked.connect(self.play_selected_album)
 
         shuffle_button = QPushButton("Shuffle Albums")
+        shuffle_button.clicked.connect(self.shuffle_from_selected)
 
         playback_buttons.addWidget(play_button)
         playback_buttons.addWidget(shuffle_button)
+
         main_layout.addLayout(playback_buttons)
 
         self.now_playing = QLabel("Nothing playing")
         self.now_playing.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.now_playing.setWordWrap(True)
+
         main_layout.addWidget(self.now_playing)
 
         self.web_player = QWebEngineView()
 
         self.web_player.settings().setAttribute(
             QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture,
-            False
+            False,
+        )
+
+        self.web_player.titleChanged.connect(
+            self.handle_player_title_change
         )
 
         self.web_player.setMinimumSize(480, 270)
+
         main_layout.addWidget(self.web_player)
 
         self.web_player.load(
@@ -255,13 +306,29 @@ class Grimoire(QWidget):
         for title, url in database.get_albums():
             item = QListWidgetItem(title)
             item.setData(Qt.ItemDataRole.UserRole, url)
+
             self.album_list.addItem(item)
+
+    def get_all_albums(self):
+        albums = []
+
+        for row in range(self.album_list.count()):
+            item = self.album_list.item(row)
+
+            albums.append(
+                {
+                    "title": item.text(),
+                    "url": item.data(Qt.ItemDataRole.UserRole),
+                }
+            )
+
+        return albums
 
     def add_album(self):
         url, ok = QInputDialog.getText(
             self,
             "Add Album",
-            "YouTube URL:"
+            "YouTube URL:",
         )
 
         url = url.strip()
@@ -275,7 +342,7 @@ class Grimoire(QWidget):
             QMessageBox.warning(
                 self,
                 "Invalid URL",
-                "Grimoire could not recognise that YouTube video URL."
+                "Grimoire could not recognise that YouTube video URL.",
             )
             return
 
@@ -285,7 +352,7 @@ class Grimoire(QWidget):
             QMessageBox.warning(
                 self,
                 "Lookup Failed",
-                "Grimoire could not retrieve the video's name."
+                "Grimoire could not retrieve the video's name.",
             )
             return
 
@@ -294,7 +361,7 @@ class Grimoire(QWidget):
             "Add Album",
             f"Found:\n\n{title}\n\nAdd this album to Grimoire?",
             QMessageBox.StandardButton.Yes
-            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.No,
         )
 
         if confirmation == QMessageBox.StandardButton.Yes:
@@ -308,7 +375,7 @@ class Grimoire(QWidget):
             QMessageBox.information(
                 self,
                 "No Album Selected",
-                "Please select an album first."
+                "Please select an album first.",
             )
             return
 
@@ -319,7 +386,7 @@ class Grimoire(QWidget):
             "Delete Album",
             f"Remove '{title}' from Grimoire?",
             QMessageBox.StandardButton.Yes
-            | QMessageBox.StandardButton.No
+            | QMessageBox.StandardButton.No,
         )
 
         if confirmation == QMessageBox.StandardButton.Yes:
@@ -327,41 +394,122 @@ class Grimoire(QWidget):
             self.load_albums()
 
     def play_selected_album(self, _item=None):
-        selected = self.album_list.currentItem()
+        selected_row = self.album_list.currentRow()
 
-        if not selected:
+        if selected_row < 0:
             QMessageBox.information(
                 self,
                 "No Album Selected",
-                "Please select an album first."
+                "Please select an album first.",
             )
             return
 
-        title = selected.text()
-        url = selected.data(Qt.ItemDataRole.UserRole)
+        albums = self.get_all_albums()
+
+        # Selected album first, then continue down the visible list,
+        # wrapping back to the beginning.
+        self.play_queue = (
+            albums[selected_row:]
+            + albums[:selected_row]
+        )
+
+        self.queue_position = 0
+        self.play_current_queue_album()
+
+    def shuffle_from_selected(self):
+        selected_row = self.album_list.currentRow()
+
+        if selected_row < 0:
+            QMessageBox.information(
+                self,
+                "No Album Selected",
+                "Please select an album first.",
+            )
+            return
+
+        albums = self.get_all_albums()
+        selected_album = albums[selected_row]
+
+        remaining_albums = (
+            albums[:selected_row]
+            + albums[selected_row + 1:]
+        )
+
+        random.shuffle(remaining_albums)
+
+        # Your chosen album always plays first.
+        self.play_queue = [
+            selected_album,
+            *remaining_albums,
+        ]
+
+        self.queue_position = 0
+        self.play_current_queue_album()
+
+    def play_current_queue_album(self):
+        if not self.play_queue:
+            return
+
+        if not 0 <= self.queue_position < len(self.play_queue):
+            self.now_playing.setText("Queue finished")
+            return
+
+        album = self.play_queue[self.queue_position]
+
+        self.play_album(
+            album["title"],
+            album["url"],
+        )
+
+    def play_album(self, title, url):
         video_id = extract_youtube_video_id(url)
 
         if not video_id:
             QMessageBox.warning(
                 self,
                 "Invalid URL",
-                "The saved URL is not a recognised YouTube video URL."
+                f"Grimoire could not play:\n\n{title}",
             )
             return
 
-        self.now_playing.setText(f"Now playing: {title}")
+        self.now_playing.setText(
+            f"Now playing: {title}"
+        )
 
         player_url = QUrl(f"{PLAYER_ORIGIN}/player")
-        query = player_url.query()
-
-        from PySide6.QtCore import QUrlQuery
 
         parameters = QUrlQuery()
         parameters.addQueryItem("video", video_id)
         parameters.addQueryItem("title", title)
+
         player_url.setQuery(parameters)
 
         self.web_player.load(player_url)
+
+    def handle_player_title_change(self, page_title):
+        if page_title != ENDED_PAGE_TITLE:
+            return
+
+        if self.advancing_album:
+            return
+
+        self.advancing_album = True
+
+        # Let the current browser event finish before loading the next page.
+        QTimer.singleShot(
+            100,
+            self.play_next_album,
+        )
+
+    def play_next_album(self):
+        self.queue_position += 1
+        self.advancing_album = False
+
+        if self.queue_position >= len(self.play_queue):
+            self.now_playing.setText("Queue finished")
+            return
+
+        self.play_current_queue_album()
 
 
 if __name__ == "__main__":
@@ -369,12 +517,14 @@ if __name__ == "__main__":
 
     try:
         player_server = start_player_server()
+
     except RuntimeError as error:
         QMessageBox.critical(
             None,
             "Grimoire Could Not Start",
-            str(error)
+            str(error),
         )
+
         sys.exit(1)
 
     window = Grimoire()
