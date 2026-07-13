@@ -56,7 +56,11 @@ def resource_path(filename):
 
     return base_path / filename
 
-ICON_PATH = Path(__file__).resolve().parent / "Grimoire.ico"
+def resource_path(filename):
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / filename
+
+    return Path(__file__).resolve().parent / filename
 
 class Grimoire(QWidget):
     def __init__(self):
@@ -361,19 +365,13 @@ class Grimoire(QWidget):
 
 
 if __name__ == "__main__":
-    # Give Windows a unique identity for the taskbar icon.
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
         "Grimoire.AlbumPlayer"
     )
 
     app = QApplication(sys.argv)
 
-    app_icon = QIcon(str(ICON_PATH))
-
-    print("Icon path:", ICON_PATH)
-    print("Icon exists:", ICON_PATH.exists())
-    print("Icon loaded:", not app_icon.isNull())
-
+    app_icon = QIcon(str(resource_path("Grimoire.ico")))
     app.setWindowIcon(app_icon)
 
     window = Grimoire()
