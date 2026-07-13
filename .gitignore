@@ -1,0 +1,15 @@
+# Your personal album library
+grimoire.db
+grimoire.db-shm
+grimoire.db-wal
+
+# Python temporary files
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+
+# VS Code local settings
+.vscode/
