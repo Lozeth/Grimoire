@@ -276,10 +276,14 @@ class Grimoire(QWidget):
         play_button = QPushButton("Play")
         play_button.clicked.connect(self.play_selected_album)
 
+        next_button = QPushButton("Next")
+        next_button.clicked.connect(self.next_album)
+
         shuffle_button = QPushButton("Shuffle Albums")
         shuffle_button.clicked.connect(self.shuffle_from_selected)
 
         playback_buttons.addWidget(play_button)
+        playback_buttons.addWidget(next_button)
         playback_buttons.addWidget(shuffle_button)
 
         main_layout.addLayout(playback_buttons)
@@ -492,6 +496,19 @@ class Grimoire(QWidget):
             self.play_next_album,
         )
 
+    def next_album(self):
+        if not self.play_queue:
+            QMessageBox.information(
+                self,
+                "Nothing Playing",
+                "Start an album or shuffle first.",
+            )
+            return
+
+        self.audio_player.stop()
+        self.play_next_album()    
+    
+    
     def play_next_album(self):
         self.queue_position += 1
         self.advancing_album = False
