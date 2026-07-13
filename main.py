@@ -1,9 +1,14 @@
-from PySide6.QtGui import QIcon
+# Hi
+
 import random
 import re
 import sys
+import ctypes
+
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QWidget,
@@ -39,13 +44,29 @@ def extract_youtube_video_id(url):
 
     return None
 
+def resource_path(filename):
+    """Find bundled resources both in development and in the packaged EXE."""
+    base_path = Path(
+        getattr(
+            sys,
+            "_MEIPASS",
+            Path(__file__).resolve().parent,
+        )
+    )
+
+    return base_path / filename
+
+ICON_PATH = Path(__file__).resolve().parent / "Grimoire.ico"
 
 class Grimoire(QWidget):
     def __init__(self):
         super().__init__()
 
         self.setWindowTitle("Grimoire")
-        self.setWindowIcon(QIcon("icon.ico"))
+        self.setWindowIcon(
+            QIcon(str(resource_path("Grimoire.ico")))
+        )
+        self.setWindowIcon(QIcon("Grimoire.ico"))
         self.setMinimumSize(700, 450)
 
         self.play_queue = []
@@ -340,9 +361,23 @@ class Grimoire(QWidget):
 
 
 if __name__ == "__main__":
+    # Give Windows a unique identity for the taskbar icon.
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+        "Grimoire.AlbumPlayer"
+    )
+
     app = QApplication(sys.argv)
 
+    app_icon = QIcon(str(ICON_PATH))
+
+    print("Icon path:", ICON_PATH)
+    print("Icon exists:", ICON_PATH.exists())
+    print("Icon loaded:", not app_icon.isNull())
+
+    app.setWindowIcon(app_icon)
+
     window = Grimoire()
+    window.setWindowIcon(app_icon)
     window.show()
 
     sys.exit(app.exec())
