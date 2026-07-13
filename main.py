@@ -100,7 +100,7 @@ class Grimoire(QWidget):
 
         main_layout.addLayout(playback_buttons)
 
-        self.now_playing = QLabel("Nothing playing")
+        self.now_playing = QLabel("Nothing Playing")
         self.now_playing.setAlignment(
             Qt.AlignmentFlag.AlignCenter
         )
@@ -276,7 +276,7 @@ class Grimoire(QWidget):
 
     def play_album(self, title, url):
         self.now_playing.setText(
-            f"Loading: {title}"
+            f"Playing: {title}"
         )
 
         self.audio_player.play_youtube(url)
